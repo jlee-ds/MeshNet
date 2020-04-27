@@ -1,2 +1,5 @@
 .idea/
 *.pkl
+*.obj
+.DS_Store
+.ipynb_checkpoints

@@ -17,8 +17,8 @@ def find_neighbor(faces, faces_contain_this_vertex, vf1, vf2, except_face):
 
 if __name__ == '__main__':
 
-    root = 'ModelNet40_simplification'
-    new_root = 'ModelNet40_MeshNet'
+    root = '../dataset/clf_ac141_f'
+    new_root = 'ADNI2_MeshNet'
 
     for type in os.listdir(root):
         for phrase in ['train', 'test']:
@@ -29,7 +29,7 @@ if __name__ == '__main__':
             if not os.path.exists(phrase_path):
                 os.mkdir(phrase)
 
-            files = glob.glob(os.path.join(phrase_path, '*.off'))
+            files = glob.glob(os.path.join(phrase_path, '*.obj'))
             for file in files:
                 # load mesh
                 mesh = pymesh.load_mesh(file)
