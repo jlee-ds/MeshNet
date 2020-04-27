@@ -17,8 +17,8 @@ def find_neighbor(faces, faces_contain_this_vertex, vf1, vf2, except_face):
 
 if __name__ == '__main__':
 
-    root = '../dataset/clf_ac141_f'
-    new_root = 'ADNI2_MeshNet'
+    root = '../dataset/ADNI2_obj'
+    new_root = 'ADNI2_MeshNet/'
 
     for type in os.listdir(root):
         for phrase in ['train', 'test']:

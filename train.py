@@ -7,8 +7,10 @@ import torch.optim as optim
 import torch.utils.data as data
 from config import get_train_config
 from data import ModelNet40
+from data import ADNI2_Dataset
 from models import MeshNet
 from utils import append_feature, calculate_map
+from tensorboardX import SummaryWriter
 
 
 cfg = get_train_config()
@@ -16,7 +18,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = cfg['cuda_devices']
 
 
 data_set = {
-    x: ModelNet40(cfg=cfg['dataset'], part=x) for x in ['train', 'test']
+    x: ADNI2_Dataset(cfg=cfg['dataset'], part=x) for x in ['train', 'test']
 }
 data_loader = {
     x: data.DataLoader(data_set[x], batch_size=cfg['batch_size'], num_workers=4, shuffle=True, pin_memory=False)
@@ -29,6 +31,11 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
     best_acc = 0.0
     best_map = 0.0
     best_model_wts = copy.deepcopy(model.state_dict())
+    
+    from datetime import datetime
+    current_time = datetime.now().strftime('%b%d_%H-%M-%S')
+    log_dir = os.path.join('runs', current_time)
+    writer = SummaryWriter(log_dir+'-bs64')
 
     for epoch in range(1, cfg['max_epoch']):
 
@@ -68,8 +75,8 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
                         optimizer.step()
 
                     if phrase == 'test':
-                        ft_all = append_feature(ft_all, feas.detach())
-                        lbl_all = append_feature(lbl_all, targets.detach(), flaten=True)
+                        ft_all = append_feature(ft_all, feas.detach().cpu().numpy())
+                        lbl_all = append_feature(lbl_all, targets.detach().cpu().numpy(), flaten=True)
 
                     running_loss += loss.item() * centers.size(0)
                     running_corrects += torch.sum(preds == targets.data)
@@ -79,6 +86,8 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
 
             if phrase == 'train':
                 print('{} Loss: {:.4f} Acc: {:.4f}'.format(phrase, epoch_loss, epoch_acc))
+                writer.add_scalar('data/train_loss', epoch_loss, epoch)
+                writer.add_scalar('data/train_acc', epoch_acc, epoch)
 
             if phrase == 'test':
                 epoch_map = calculate_map(ft_all, lbl_all)
@@ -91,6 +100,8 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
                     torch.save(copy.deepcopy(model.state_dict()), 'ckpt_root/{}.pkl'.format(epoch))
 
                 print('{} Loss: {:.4f} Acc: {:.4f} mAP: {:.4f}'.format(phrase, epoch_loss, epoch_acc, epoch_map))
+                writer.add_scalar('data/test_loss', epoch_loss, epoch)
+                writer.add_scalar('data/test_acc', epoch_acc, epoch)
 
     return best_model_wts
 
@@ -100,10 +111,13 @@ if __name__ == '__main__':
     model = MeshNet(cfg=cfg['MeshNet'], require_fea=True)
     model.cuda()
     model = nn.DataParallel(model)
+    num_total_params = sum(p.numel() for p in model.parameters())
+    num_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('Number of total paramters: %d, number of trainable parameters: %d' % (num_total_params, num_trainable_params))
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg['milestones'], gamma=cfg['gamma'])
 
     best_model_wts = train_model(model, criterion, optimizer, scheduler, cfg)
-    torch.save(best_model_wts, os.path.join(cfg['ckpt'], 'MeshNet_best.pkl'))
+    torch.save(best_model_wts, os.path.join(cfg['ckpt_root'], 'MeshNet_best.pkl'))

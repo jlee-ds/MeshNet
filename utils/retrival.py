@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # all 2468 shapes
-top_k = 1000
+top_k = 282
 
 
 def append_feature(raw, data, flaten=False):
@@ -36,7 +36,9 @@ def calculate_map(fts, lbls, dis_mat=None):
         scores = dis_mat[:, i]
         targets = (lbls == lbls[i]).astype(np.uint8)
         sortind = np.argsort(scores, 0)[:top_k]
+        
         truth = targets[sortind]
+        #print(top_k, len(scores), len(targets), len(sortind), len(truth))
         sum = 0
         precision = []
         for j in range(top_k):
