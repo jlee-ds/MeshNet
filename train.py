@@ -1,6 +1,7 @@
 import copy
 import os
 import torch
+import time
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +12,9 @@ from data import ADNI2_Dataset
 from models import MeshNet
 from utils import append_feature, calculate_map
 from tensorboardX import SummaryWriter
+import sklearn.metrics
+import numpy as np
+import torch.backends.cudnn as cudnn
 
 
 cfg = get_train_config()
@@ -25,6 +29,10 @@ data_loader = {
     for x in ['train', 'test']
 }
 
+torch.manual_seed(1)
+cudnn.benchmark = False
+cudnn.deterministic = True
+
 
 def train_model(model, criterion, optimizer, scheduler, cfg):
 
@@ -35,9 +43,9 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
     from datetime import datetime
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     log_dir = os.path.join('runs', current_time)
-    writer = SummaryWriter(log_dir+'-bs64')
+    writer = SummaryWriter(log_dir+'-bs64_e300')
 
-    for epoch in range(1, cfg['max_epoch']):
+    for epoch in range(1, cfg['max_epoch'] + 1):
 
         print('-' * 60)
         print('Epoch: {} / {}'.format(epoch, cfg['max_epoch']))
@@ -54,6 +62,7 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
             running_loss = 0.0
             running_corrects = 0
             ft_all, lbl_all = None, None
+            preds_list, labels_list = [], []
 
             for i, (centers, corners, normals, neighbor_index, targets) in enumerate(data_loader[phrase]):
 
@@ -69,6 +78,8 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
                     outputs, feas = model(centers, corners, normals, neighbor_index)
                     _, preds = torch.max(outputs, 1)
                     loss = criterion(outputs, targets)
+                    preds_list.append(preds.detach().cpu().numpy())
+                    labels_list.append(targets.detach().cpu().numpy())
 
                     if phrase == 'train':
                         loss.backward()
@@ -100,9 +111,12 @@ def train_model(model, criterion, optimizer, scheduler, cfg):
                     torch.save(copy.deepcopy(model.state_dict()), 'ckpt_root/{}.pkl'.format(epoch))
 
                 print('{} Loss: {:.4f} Acc: {:.4f} mAP: {:.4f}'.format(phrase, epoch_loss, epoch_acc, epoch_map))
+                clsf_rpt = sklearn.metrics.classification_report(np.concatenate(labels_list, axis=None), np.concatenate(preds_list, axis=None))
+                print(clsf_rpt)
                 writer.add_scalar('data/test_loss', epoch_loss, epoch)
                 writer.add_scalar('data/test_acc', epoch_acc, epoch)
 
+    writer.close()
     return best_model_wts
 
 
@@ -119,5 +133,9 @@ if __name__ == '__main__':
     optimizer = optim.SGD(model.parameters(), lr=cfg['lr'], momentum=cfg['momentum'], weight_decay=cfg['weight_decay'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg['milestones'], gamma=cfg['gamma'])
 
+    t = time.time()
     best_model_wts = train_model(model, criterion, optimizer, scheduler, cfg)
+    t_duration = time.time() - t
+    print('total time : {:.3f}s'.format(t_duration))
+    print('Number of total paramters: %d' % (num_total_params))
     torch.save(best_model_wts, os.path.join(cfg['ckpt_root'], 'MeshNet_best.pkl'))
